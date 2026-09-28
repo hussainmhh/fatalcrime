@@ -4,7 +4,7 @@ import asyncio
 import discord
 from pathlib import Path
 
-TOKEN = ["DISCORD_TOKEN"]
+TOKEN = os.environ["DISCORD_TOKEN"]
 
 TARGET_USER_ID = 804660273444159518
 ALERT_CHANNEL_ID = 1554034362327105546
