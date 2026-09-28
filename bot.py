@@ -6,7 +6,11 @@ from pathlib import Path
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 
-TARGET_USER_ID = 804660273444159518
+TARGET_USER_IDS = [
+    804660273444159518,
+    312616732034596866,
+]
+
 ALERT_CHANNEL_ID = 1554034362327105546
 
 STATE_FILE = Path("avatar_state.json")
@@ -17,66 +21,81 @@ intents.members = True
 client = discord.Client(intents=intents)
 
 
-def load_last_avatar():
+def load_state():
     if not STATE_FILE.exists():
-        return None
+        return {}
 
     try:
-        return json.loads(STATE_FILE.read_text()).get("avatar_url")
+        return json.loads(STATE_FILE.read_text())
     except Exception:
-        return None
+        return {}
 
 
-def save_avatar(url):
-    STATE_FILE.write_text(json.dumps({"avatar_url": url}))
+def save_state(state):
+    STATE_FILE.write_text(json.dumps(state))
 
 
-async def check_avatar():
+async def check_avatars():
     await client.wait_until_ready()
 
     while not client.is_closed():
         try:
-            user = await client.fetch_user(TARGET_USER_ID)
-            new_avatar = user.display_avatar.url
-            old_avatar = load_last_avatar()
+            state = load_state()
 
-            # First run: remember current PFP without alerting
-            if old_avatar is None:
-                save_avatar(new_avatar)
+            for user_id in TARGET_USER_IDS:
+                try:
+                    user = await client.fetch_user(user_id)
 
-            elif old_avatar != new_avatar:
-                channel = client.get_channel(ALERT_CHANNEL_ID)
+                    new_avatar = str(user.display_avatar.url)
+                    old_avatar = state.get(str(user_id))
 
-                if channel is None:
-                    channel = await client.fetch_channel(ALERT_CHANNEL_ID)
+                    # First time seeing this user:
+                    # remember their current PFP without sending an alert.
+                    if old_avatar is None:
+                        state[str(user_id)] = new_avatar
+                        save_state(state)
+                        print(f"Saved starting PFP for {user}")
 
-                embed = discord.Embed(
-                    title="Lil nig changed his pfp again 💔✌🏿"
-                )
+                    elif old_avatar != new_avatar:
+                        channel = client.get_channel(ALERT_CHANNEL_ID)
 
-                embed.add_field(
-                    name="Old pfp",
-                    value=f"[Open old pfp]({old_avatar})",
-                    inline=False
-                )
+                        if channel is None:
+                            channel = await client.fetch_channel(
+                                ALERT_CHANNEL_ID
+                            )
 
-                embed.add_field(
-                    name="To:",
-                    value=f"[Open new pfp]({new_avatar})",
-                    inline=False
-                )
+                        embed = discord.Embed(
+                            title="Lil nig changed his pfp again 💔✌🏿"
+                        )
 
-                embed.set_thumbnail(url=old_avatar)
-                embed.set_image(url=new_avatar)
+                        embed.add_field(
+                            name="Old pfp",
+                            value=f"[Open old pfp]({old_avatar})",
+                            inline=False,
+                        )
 
-                await channel.send(embed=embed)
+                        embed.add_field(
+                            name="To:",
+                            value=f"[Open new pfp]({new_avatar})",
+                            inline=False,
+                        )
 
-                save_avatar(new_avatar)
+                        embed.set_thumbnail(url=old_avatar)
+                        embed.set_image(url=new_avatar)
+
+                        await channel.send(embed=embed)
+
+                        state[str(user_id)] = new_avatar
+                        save_state(state)
+
+                        print(f"PFP change detected for {user}")
+
+                except Exception as e:
+                    print(f"Error checking {user_id}: {e}")
 
         except Exception as e:
             print(f"Watcher error: {e}")
 
-        # Check every 60 seconds
         await asyncio.sleep(60)
 
 
@@ -84,10 +103,13 @@ async def check_avatar():
 async def on_ready():
     print(f"Logged in as {client.user}")
 
+    for user_id in TARGET_USER_IDS:
+        print(f"Watching user: {user_id}")
+
 
 async def main():
     async with client:
-        asyncio.create_task(check_avatar())
+        asyncio.create_task(check_avatars())
         await client.start(TOKEN)
 
 
